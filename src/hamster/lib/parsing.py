@@ -32,14 +32,45 @@ tags_separator = re.compile(r"""
     (?=\#)      # hash character (start of first tag, doesn't consume it)
 """, flags=re.VERBOSE)
 
-description_separator = re.compile(r"""
-    ,+          # 1 or more commas
-    \s*         # maybe spaces
-""", flags=re.VERBOSE)
-
 
 def get_tags_from_description(description):
     return list(re.findall(tags_in_description, description))
+
+def consume_until(it, separators):
+    """Consume iterator until one of the separators is found.
+
+    Characters prefixed by backslash are replaced by the character
+    (without backslash) and loose their potential meaning as
+    separators.
+
+    Returns:
+    - Consumed string without escaping backslashes,
+    - the separator that stopped consumption or None if end of
+      iterator was reached before separator was found.
+    """
+
+    ret = []
+    sep = None
+    while True:
+        try:
+            c = next(it)
+        except StopIteration:
+            break
+
+        if c in separators:
+            sep = c
+            break
+
+        if c == '\\':
+            try:
+                c = next(it)
+            except StopIteration:
+                ret.append(c)  # TODO: What to do when \ is last symbol? IMO this should be a parse error. Currently just append it.
+                break
+
+        ret.append(c)
+
+    return "".join(ret), sep
 
 
 def parse_fact(text, range_pos="head", default_day=None, ref="now"):
@@ -66,8 +97,18 @@ def parse_fact(text, range_pos="head", default_day=None, ref="now"):
     res["start_time"] = start
     res["end_time"] = end
 
-    # tags
-    split = re.split(tags_separator, remaining_text, 1)
+    it = iter(remaining_text)
+    res["activity"], sep = consume_until(it, ',@')
+    if sep == "@":
+        res["category"], sep = consume_until(it, ',')
+
+    if sep == None:
+        res["description"] = ''
+        res["tags"] = []
+        # print(res)  # TODO: remove
+        return res
+
+    split = re.split(tags_separator, sep + ''.join(it), 1)
     remaining_text = split[0]
     tags_part = split[1] if len(split) > 1 else None
     if tags_part:
@@ -76,22 +117,13 @@ def parse_fact(text, range_pos="head", default_day=None, ref="now"):
         tags = []
 
     # description
-    # first look for comma (description hard left boundary)
-    split = re.split(description_separator, remaining_text, 1)
-    head = split[0]
-    description = split[1] if len(split) > 1 else ""
+    description = remaining_text.lstrip(',').strip()  # TODO: Stripping multiple commas is weird but resembles the previous behavior
     # Extract tags from description, put them before other tags
     tags = get_tags_from_description(description) + tags
-    res["description"] = description.strip()
-    remaining_text = head.strip()
 
+    res["description"] = description
     res["tags"] = tags
 
-    # activity
-    split = remaining_text.rsplit('@', maxsplit=1)
-    activity = split[0]
-    category = split[1] if len(split) > 1 else ""
-    res["activity"] = activity
-    res["category"] = category
 
+    # print(res)  # TODO: remove
     return res

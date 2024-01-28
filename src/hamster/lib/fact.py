@@ -13,8 +13,17 @@ import calendar
 
 from copy import deepcopy
 
+import re
+
 from hamster.lib import datetime as dt
 from hamster.lib.parsing import parse_fact, get_tags_from_description
+
+
+re_escape = re.compile('[,@]')
+
+
+def escape(str):
+    return re_escape.sub(lambda m: '\\' + m.group(0), str)
 
 
 class FactError(Exception):
@@ -180,10 +189,10 @@ class Fact(object):
         return fact
 
     def serialized_name(self):
-        res = self.activity
+        res = escape(self.activity)
 
         if self.category:
-            res += "@%s" % self.category
+            res += "@%s" % escape(self.category)
 
         if self.description:
             res += ', '
